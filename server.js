@@ -1,9 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const FormData = require("form-data");
-const puppeteer = require("puppeteer-core");
-const { execSync } = require("child_process");
-const fs = require("fs");
+const { chromium } = require("playwright");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -11,7 +9,7 @@ app.use(express.json({ limit: "2mb" }));
 const PORT = process.env.PORT || 3000;
 const DONATION_SECRET = process.env.DONATION_SECRET;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
-const WEBHOOK_USERNAME = process.env.WEBHOOK_USERNAME || "Fire's Utilities";
+const WEBHOOK_USERNAME = process.env.WEBHOOK_USERNAME || "Quantum's Utilities";
 const WEBHOOK_AVATAR_URL = process.env.WEBHOOK_AVATAR_URL || "";
 
 function formatNumber(num) {
@@ -25,36 +23,6 @@ function escapeHtml(str = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function getChromePath() {
-  const candidates = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    "/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome",
-    "/opt/render/.cache/puppeteer/chrome/linux-128.0.6613.119/chrome-linux64/chrome",
-    "/opt/render/.cache/puppeteer/chrome/linux-129.0.6668.58/chrome-linux64/chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium"
-  ].filter(Boolean);
-
-  for (const path of candidates) {
-    try {
-      require("fs").accessSync(path);
-      return path;
-    } catch (e) {}
-  }
-
-  try {
-    const detected = execSync("which google-chrome-stable || which google-chrome || which chromium-browser || which chromium", {
-      encoding: "utf8"
-    }).trim();
-
-    if (detected) return detected;
-  } catch (e) {}
-
-  throw new Error("Chrome executable not found on server.");
 }
 
 function formatDate(unix) {
@@ -226,21 +194,13 @@ function getVisualTier(amount) {
   };
 }
 
-function robloxAvatarUrl(userId) {
-  if (Number(userId) === 1) {
-    return "https://tr.rbxcdn.com/30DAY-AvatarHeadshot-31032D8A0A1B6D4E4E6D4A3F0D2A0D4B-Png/150/150/AvatarHeadshot/Webp/noFilter";
-  }
-
-  return `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=420x420&format=Png&isCircular=false`;
-}
-
 async function resolveAvatarImage(userId) {
   if (Number(userId) === 1) {
     return "https://www.roblox.com/headshot-thumbnail/image?userId=1&width=420&height=420&format=png";
   }
 
   try {
-    const res = await axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot`, {
+    const res = await axios.get("https://thumbnails.roblox.com/v1/users/avatar-headshot", {
       params: {
         userIds: userId,
         size: "420x420",
@@ -459,26 +419,21 @@ async function generateDonationImage(data) {
   </html>
   `;
 
-const browser = await puppeteer.launch({
-  headless: true,
-  executablePath: getChromePath(),
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu"
-  ]
-});
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+  });
 
   try {
-    const page = await browser.newPage();
-    await page.setViewport({
-      width: 575,
-      height: 173,
+    const page = await browser.newPage({
+      viewport: {
+        width: 575,
+        height: 173
+      },
       deviceScaleFactor: 1
     });
 
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, { waitUntil: "networkidle" });
     const screenshot = await page.screenshot({
       type: "png"
     });
@@ -547,6 +502,7 @@ function getTopLine(data) {
 
   return `${emojis.prefix} ${donor} donated ${emojis.robux} ${amount} Robux to ${receiver}`;
 }
+
 async function sendDiscordWebhook(data, imageBuffer) {
   const form = new FormData();
 
