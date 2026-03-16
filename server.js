@@ -1,7 +1,8 @@
 const express = require("express");
 const axios = require("axios");
 const FormData = require("form-data");
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-core");
+const { execSync } = require("child_process");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -23,6 +24,36 @@ function escapeHtml(str = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function getChromePath() {
+  const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    "/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome",
+    "/opt/render/.cache/puppeteer/chrome/linux-128.0.6613.119/chrome-linux64/chrome",
+    "/opt/render/.cache/puppeteer/chrome/linux-129.0.6668.58/chrome-linux64/chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium"
+  ].filter(Boolean);
+
+  for (const path of candidates) {
+    try {
+      require("fs").accessSync(path);
+      return path;
+    } catch (e) {}
+  }
+
+  try {
+    const detected = execSync("which google-chrome-stable || which google-chrome || which chromium-browser || which chromium", {
+      encoding: "utf8"
+    }).trim();
+
+    if (detected) return detected;
+  } catch (e) {}
+
+  throw new Error("Chrome executable not found on server.");
 }
 
 function formatDate(unix) {
@@ -427,10 +458,16 @@ async function generateDonationImage(data) {
   </html>
   `;
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
-  });
+const browser = await puppeteer.launch({
+  headless: true,
+  executablePath: getChromePath(),
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu"
+  ]
+});
 
   try {
     const page = await browser.newPage();
